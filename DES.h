@@ -18,7 +18,7 @@ namespace DES {
 		};
 		int64_t output = 0;
 		for (int i = 0; i < 64; ++i) {
-			output |= ((input >> (table[i]-1)) & 1) << i;
+			output |= ((input >> (64-table[i])) & 1) << (63-i);
 		}
 		return output;
 	}
@@ -36,12 +36,12 @@ namespace DES {
 		};
 		int64_t output = 0;
 		for (int i = 0; i < 64; ++i) {
-			output |= ((input >> (table[i] - 1)) & 1) << i;
+			output |= ((input >> (64-table[i])) & 1) << (63-i);
 		}
 		return output;
 	}
 
-	int64_t E(int32_t input) {
+	int64_t E(int64_t input) {
 		static const int table[] = {
 			32, 1, 2, 3, 4, 5,
 			4, 5, 6, 7, 8, 9,
@@ -54,12 +54,12 @@ namespace DES {
 		};
 		int64_t output = 0;
 		for (int i = 0; i < 48; ++i) {
-			output |= ((input >> (table[i] - 1)) & 1) << i;
+			output |= ((input >> (32-table[i])) & 1) << (47-i);
 		}
 		return output;
 	}
 
-	int32_t S(int64_t input) {
+	int64_t S(int64_t input) {
 		static const int table[8][4][16] = {
 		{
 			{14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7},
@@ -110,7 +110,7 @@ namespace DES {
 			{2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11}
 		}
 		};
-		int32_t output = 0;
+		int64_t output = 0;
 		for (int i = 0; i < 8; ++i) {
 			int8_t t = (input >> (42 - i * 6)) & 63;
 			output |= (table[i][((t >> 5) << 1) + (t & 1)][((t & 31) - (t & 1)) >> 1]) << (28 - i * 4);
@@ -118,19 +118,87 @@ namespace DES {
 		return output;
 	}
 
-	int32_t P(int32_t input) {
+	int64_t P(int64_t input) {
 		static const int table[] = {
 			16, 7, 20, 21, 29, 12, 28, 17,
 			1, 15, 23, 26, 5, 18, 31, 10,
 			2, 8, 24, 14, 32, 27, 3, 9,
 			19, 13, 30, 6, 22, 11, 4, 25
 		};
-		int32_t output = 0;
+		int64_t output = 0;
 		for (int i = 0; i < 32; ++i) {
-			output |= ((input >> (table[i] - 1)) & 1) << i;
+			output |= ((input >> (32-table[i])) & 1) << (31-i);
 		}
 		return output;
 	}
+
+	int64_t F(int64_t input, int64_t key) {
+		return P(S(E(input) ^ key));
+	}
+
+	int64_t PC_1(int64_t input) {
+		static const int table[] = {
+			57, 49, 41, 33, 25, 17, 9,
+			1, 58, 50, 42, 34, 26, 18,
+			10, 2, 59, 51, 43, 35, 27,
+			19, 11, 3, 60, 52, 44, 36,
+			63, 55, 47, 39, 31, 23, 15,
+			7, 62, 54, 46, 38, 30, 22,
+			14, 6, 61, 53, 45, 37, 29,
+			21, 13, 5, 28, 20, 12, 4
+		};
+		int64_t output = 0;
+		for (int i = 0; i < 56; ++i) {
+			output |= (((input >> (64-table[i]))) & 1) << (55-i);
+		}
+		return output;
+	}
+
+	int64_t PC_2(int64_t input) {
+		static const int table[] = {
+			14, 17, 11, 24, 1, 5,
+			3, 28, 15, 6, 21, 10,
+			23, 19, 12, 4, 26, 8,
+			16, 7, 27, 20, 13, 2,
+			41, 52, 31, 37, 47, 55,
+			30, 40, 51, 45, 33, 48,
+			44, 49, 39, 56, 34, 53,
+			46, 42, 50, 36, 29, 32
+		};
+		int64_t output = 0;
+		for (int i = 0; i < 48; ++i) {
+			output |= ((input >> (56-table[i])) & 1) << (47-i);
+		}
+		return output;
+	}
+
+	int64_t LS(int64_t input, int offset) {
+		return ((input << offset) | (input >> (28 - offset))) & 0x0fffffff;
+	}
+
+	int64_t _encrypt(int64_t input, int64_t key) {
+		int64_t output = 0;
+		output = IP(input);
+		key = PC_1(key);
+		int64_t L = output >> 32, R = output & 0xffffffff;
+		int64_t C = key >> 28, D = key & 0x0fffffff;
+		for (int i = 1; i <= 16; ++i) {
+			if (i == 1 || i == 2 || i == 9 || i == 16) {
+				C = LS(C, 1);
+				D = LS(D, 1);
+			}
+			else {
+				C = LS(C, 2);
+				D = LS(D, 2);
+			}
+			int64_t t = R;
+			R = (L ^ F(R, PC_2((C << 28) | D))) & 0xffffffff;
+			L = t;
+		}
+		output = IP_reverse((((int64_t)R) << 32) | (int64_t)L);
+		return output;
+	}
+
 }
 
 #endif
